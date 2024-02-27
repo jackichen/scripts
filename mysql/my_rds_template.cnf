@@ -1,0 +1,182 @@
+[mysqld]
+core-file
+
+default_authentication_plugin = mysql_native_password
+
+# enable xengine storage engine
+loose_xengine            = FORCE
+port                     = <PORT>
+socket                   = <DATA_HOME>/tmp/mysql.sock
+mysqlx_port              = 18830
+mysqlx_socket            = <DATA_HOME>/tmp/mysqlx.sock
+pid-file                 = <DATA_HOME>/tmp/mysqld.pid
+datadir                  = <DATA_HOME>/data
+basedir                  = <DATA_HOME>/
+
+# tmp dir settings
+tmpdir                   = <DATA_HOME>/tmp/
+slave-load-tmpdir        = <DATA_HOME>/tmp/
+
+lc-messages-dir          = <BASE_DIR>/share/
+character-sets-dir       = <BASE_DIR>/share/charsets/
+
+# skip options
+skip-name-resolve
+skip-symbolic-links
+skip-external-locking
+skip-slave-start
+
+#sysdate-is-now
+
+# res settings
+back_log                 = 1500
+max_connections          = 8000
+max_connect_errors       = 10000
+#open_files_limit         = 10240
+
+connect-timeout          = 5
+wait-timeout             = 28800
+interactive-timeout      = 28800
+slave-net-timeout        = 600
+net_read_timeout         = 30
+net_write_timeout        = 60
+net_retry_count          = 10
+net_buffer_length        = 16384
+max_allowed_packet       = 64M
+
+#
+thread_stack             = 512K
+thread_cache_size        = 256
+
+# qcache settings
+
+# default settings
+# time zone
+default-time-zone        = system
+character-set-server     = utf8mb4
+
+# tmp & heap
+tmp_table_size           = 512M
+max_heap_table_size      = 512M
+
+relay-log                = relay-log
+relay_log_index          = relay-log.index
+
+# replication
+replicate-wild-ignore-table     = mysql.%
+replicate-wild-ignore-table     = test.%
+# slave_skip_errors=all
+log-error                = <DATA_HOME>/log/mysql.err
+
+# slow query log
+long-query-time          = 1
+#log-queries-not-using-indexes
+# general query log
+general_log               = OFF
+general_log_file          = <DATA_HOME>/log/mysql.log
+
+# if use auto-ex, set to 0
+relay-log-purge          = 1
+
+#data  dir
+loose_xengine_datadir=<DATA_HOME>/data/xengine
+loose_xengine_wal_dir=<DATA_HOME>/data/xengine
+
+#memory & cache
+loose_xengine_db_write_buffer_size=8G
+loose_xengine_db_total_write_buffer_size=8G
+loose_xengine_block_cache_size=5G
+loose_xengine_row_cache_size=2G
+#xengine_block_size=16384
+loose_xengine_max_total_wal_size=10G
+
+#write buffer
+loose_xengine_write_buffer_size=178M
+loose_xengine_max_write_buffer_number=1000
+loose_xengine_max_write_buffer_number_to_maintain=1000
+#xengine_arena_block_size=32768
+
+#compaciton
+loose_xengine_min_write_buffer_number_to_merge=1
+loose_xengine_level0_file_num_compaction_trigger=64
+loose_xengine_level0_layer_num_compaction_trigger=8
+loose_xengine_level1_extents_major_compaction_trigger=1000
+loose_xengine_disable_auto_compactions=false
+loose_xengine_level2_usage_percent=70
+loose_xengine_flush_delete_percent=70
+loose_xengine_compaction_delete_percent=50
+loose_xengine_flush_delete_percent_trigger=700000
+loose_xengine_flush_delete_record_trigger=700000
+loose_xengine_scan_add_blocks_limit=100
+loose_xengine_compression_per_level=kNoCompression:kZSTD:kZSTD
+
+
+#data durability property
+loose_xengine_flush_log_at_trx_commit=1
+loose_xengine_enable_2pc=1
+
+#transaction pipeline performance
+#xengine_allow_concurrent_memtable_write=1
+loose_xengine_batch_group_slot_array_size=5
+loose_xengine_batch_group_max_group_size=15
+loose_xengine_batch_group_max_leader_wait_time_us=50
+
+# mysql:Notes, XEngine INFO
+log_error_verbosity=3
+
+transaction_isolation           = READ-COMMITTED
+
+default-tmp-storage-engine=innodb
+
+innodb_file_per_table
+
+innodb_open_files               = 4000
+innodb_buffer_pool_size         = 17G
+innodb_buffer_pool_instances    = 8
+innodb_max_dirty_pages_pct      = 90
+
+innodb_data_home_dir            = <DATA_HOME>/data
+innodb_data_file_path           = ibdata:128M:autoextend
+innodb_use_native_aio = 1
+innodb_stats_persistent = 1
+innodb_spin_wait_delay = 30
+
+innodb_adaptive_hash_index = 0
+innodb_flush_log_at_trx_commit  = 1
+innodb_log_buffer_size          = 64M
+innodb_log_file_size            = 190M
+innodb_log_files_in_group       = 2
+innodb_log_group_home_dir       = <DATA_HOME>/data
+
+innodb_lock_wait_timeout        = 50
+
+innodb_doublewrite=0
+innodb_thread_concurrency=0
+
+innodb_adaptive_flushing = 1
+innodb_flush_neighbors = 0
+innodb_read_io_threads = 4
+innodb_write_io_threads = 4
+innodb_io_capacity = 4000
+innodb_purge_threads = 1
+innodb_adaptive_hash_index = 1
+innodb_flush_method = O_DIRECT_NO_FSYNC
+innodb_change_buffering = all
+
+innodb_monitor_enable = '%'
+performance_schema = ON
+
+[mysqldump]
+quick
+max_allowed_packet              = 64M
+
+[mysql]
+disable-auto-rehash
+default-character-set           = utf8mb4
+connect-timeout                 = 3
+
+
+[mysqlhotcopy]
+interactive-timeout
+
+

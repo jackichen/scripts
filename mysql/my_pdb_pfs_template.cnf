@@ -1,0 +1,415 @@
+[mysqld]
+user = root
+basedir = <BASE_DIR>
+server_id = <PORT>
+# pfs setting
+datadir = <REMOTE_HOME>/data
+innodb_data_home_dir = <REMOTE_HOME>/data
+innodb_undo_directory = <REMOTE_HOME>/data
+innodb_log_group_home_dir = <REMOTE_HOME>/data
+log_bin_index = ../log/master-log-bin.index
+log_bin = ../log/mysql-bin
+loose_innodb_tmpdir = <REMOTE_HOME>/tmp
+loose_polar_temp_table_or_file_pbdname = <PBD_NAME>
+loose_polarfs_host_id = <HOST_ID>
+
+# basic settings
+port = <PORT>
+socket = <LOCAL_HOME>/tmp/mysql.sock
+pid-file = <LOCAL_HOME>/tmp/mysqld.pid
+tmpdir = <LOCAL_HOME>/tmp
+log-error = <LOCAL_HOME>/log/master-error.log
+slow_query_log_file = <LOCAL_HOME>/log/slow_query.log
+general_log_file = <LOCAL_HOME>/log/general.log
+relay-log = <LOCAL_HOME>/log/slave-relay.log
+relay-log-index = <LOCAL_HOME>/log/slave-relay-log.index
+relay-log-info-file = <LOCAL_HOME>/log/slave-relay-log.info
+master-info-file = <LOCAL_HOME>/log/master.info
+innodb_temp_tablespaces_dir = <LOCAL_HOME>/tmp
+innodb_temp_data_file_path = <LOCAL_HOME>/tmp/ibtmp1:12M:autoextend
+innodb_data_file_path = ./ibdata1:200M:autoextend
+
+#IMCI settings
+# parallel ddl
+#innodb_polar_max_pddl_threads
+#innodb_polar_parallel_ddl_threads
+#polar_enable_imci
+loose_imci_background_build_threads = 2
+loose_imci_parallel_build_threads_per_table = 32
+loose_imci_lru_cache_capacity = 100G
+
+# disable PQ
+loose_max_parallel_degree = 0
+# Enable LOAD DATA INFILE in secure
+secure_file_priv =
+
+#xengine settings
+loose_xengine = 0
+loose_xengine_datadir=<DATA_DIR>/xengine
+
+#default_storage_engine = xengine
+#memory & cache
+loose_xengine_db_total_write_buffer_size=8G
+loose_xengine_db_write_buffer_size=8G
+loose_xengine_block_cache_size=5G
+loose_xengine_row_cache_size=2G
+loose_xengine_max_total_wal_size=10G
+#xengine_block_size=16384
+#xengine_arena_block_size=32768
+
+#write buffer
+loose_xengine_write_buffer_size=178M
+loose_xengine_max_write_buffer_number=10
+loose_xengine_max_write_buffer_number_to_maintain=10
+
+#compaciton
+loose_xengine_min_write_buffer_number_to_merge=1
+loose_xengine_level0_file_num_compaction_trigger=64
+loose_xengine_level0_layer_num_compaction_trigger=8
+loose_xengine_level1_extents_major_compaction_trigger=1000
+loose_xengine_disable_auto_compactions=false
+loose_xengine_level2_usage_percent=70
+loose_xengine_flush_delete_percent=70
+loose_xengine_compaction_delete_percent=50
+loose_xengine_flush_delete_percent_trigger=700000
+loose_xengine_flush_delete_record_trigger=700000
+loose_xengine_scan_add_blocks_limit=100
+loose_xengine_compression_per_level=kNoCompression:kZSTD:kZSTD
+#xengine_compression_options = "-14:1:0"
+
+#data durability property
+loose_xengine_flush_log_at_trx_commit=1
+loose_xengine_enable_2pc=0
+
+#transaction pipeline performance
+loose_xengine_batch_group_slot_array_size=5
+loose_xengine_batch_group_max_group_size=15
+loose_xengine_batch_group_max_leader_wait_time_us=50
+
+loose_xengine_max_background_compactions=12
+loose_xengine_base_background_compactions=8
+loose_xengine_max_background_flushes=8
+
+# polardb settings
+#polar_master_host
+#polar_master_port
+#polar_master_user_name
+#polar_master_user_password
+#polar_enable_replica
+loose_polar_log_bin = OFF
+#loose_polar_dump_binlog
+loose_polar_csv_log_table_basedir = <LOCAL_HOME>/log
+loose_polar_node_basedir = <LOCAL_HOME>/log
+loose_polar_persisted_system_basedir = <LOCAL_HOME>/log
+loose_innodb_polar_log_max_checkpoint_files = 2
+loose_innodb_polar_log_auto_purge = OFF
+loose_innodb_polar_log_max_reserved_files_no_slave = 1
+loose_innodb_polar_io_latency_warning = 300000
+loose_innodb_polar_checkpoint_on_new_replica = ON
+loose_innodb_polar_log_file_max_reuse = 8
+loose_innodb_polar_copy_page_pool_size = 134217728
+loose_innodb_polar_copy_page = ON
+loose_polar_binlog_packet_size = 1M
+loose_polar_reconnect_count = 8640
+loose_polar_reconnect_sleep_time = 10000
+loose_polar_io_thread_max_wait_time = 86400
+loose_innodb_polar_log_file_extend_method = 2
+
+loose_binlog_io_cache_size = 16M
+loose_rds_audit_log_buffer_size = 160M
+loose_innodb_replica_log_parse_buf_size = 1600M
+loose_innodb_primary_flush_max_lsn_lag = 1440M
+innodb_buffer_pool_instances = 8
+innodb_buffer_pool_size = 17G
+innodb_log_buffer_size = 32M
+innodb_lru_scan_depth = 2048
+max_connections = 8512
+max_user_connections = 8000
+sort_buffer_size = 1024KB
+join_buffer_size = 512KB
+loose_innodb_log_write_ahead_size = 4096
+loose_innodb_primary_dml_max_delay_microsec = 10000
+loose_innodb_page_cleaners = 8
+loose_innodb_primary_abort_ddl_wait_replica_timeout = 3600
+loose_innodb_primary_sync_slave = 0
+loose_innodb_primary_sync_slave_timeout = 10000
+loose_innodb_primary_sync_no_slave = OFF
+loose_innodb_slave_show_correct_autoinc = OFF
+innodb_thread_concurrency = 0
+innodb_max_dirty_pages_pct = 60
+innodb_max_dirty_pages_pct_lwm = 10
+innodb_flush_method = ALL_O_DIRECT
+innodb_flush_neighbors = 1
+innodb_flush_sync = ON
+innodb_undo_tablespaces = 8
+innodb_sync_array_size = 16
+innodb_lock_wait_timeout = 50
+innodb_doublewrite = 0
+innodb_purge_threads = 4
+innodb_read_ahead_threshold = 0
+innodb_sync_spin_loops = 30
+innodb_spin_wait_delay = 6
+innodb_print_all_deadlocks = OFF
+innodb_disable_sort_file_cache = ON
+innodb_checksum_algorithm = crc32
+innodb_strict_mode = OFF
+innodb_log_compressed_pages = OFF
+innodb_io_capacity = 4000
+innodb_open_files = 20000
+innodb_adaptive_hash_index = ON
+innodb_autoinc_lock_mode = 1
+innodb_concurrency_tickets = 5000
+innodb_ft_max_token_size = 84
+innodb_ft_min_token_size = 3
+innodb_old_blocks_pct = 37
+innodb_old_blocks_time = 1000
+innodb_online_alter_log_max_size = 134217728
+innodb_purge_batch_size = 300
+innodb_read_io_threads = 4
+innodb_write_io_threads = 4
+innodb_rollback_on_timeout = OFF
+innodb_stats_method = nulls_equal
+innodb_stats_on_metadata = OFF
+innodb_stats_transient_sample_pages = 8
+innodb_table_locks = ON
+innodb_thread_sleep_delay = 10000
+innodb_use_native_aio = OFF
+innodb_random_read_ahead = OFF
+innodb_log_file_size = 1024M
+innodb_polar_log_auto_purge = ON
+innodb_undo_log_truncate = OFF
+innodb_max_undo_log_size = 1073741824
+innodb_purge_rseg_truncate_frequency = 128
+innodb_adaptive_flushing = ON
+innodb_adaptive_flushing_lwm = 10
+innodb_adaptive_hash_index_parts = 8
+innodb_adaptive_max_sleep_delay = 150000
+innodb_buffer_pool_dump_at_shutdown = OFF
+innodb_buffer_pool_load_at_startup = OFF
+innodb_change_buffer_max_size = 25
+innodb_change_buffering = none
+innodb_cmp_per_index_enabled = OFF
+innodb_commit_concurrency = 0
+innodb_compression_failure_threshold_pct = 5
+innodb_compression_level = 6
+innodb_compression_pad_pct_max = 50
+innodb_ft_cache_size = 8000000
+innodb_ft_enable_diag_print = OFF
+innodb_ft_enable_stopword = ON
+innodb_ft_num_word_optimize = 2000
+innodb_ft_result_cache_limit = 2000000000
+innodb_ft_sort_pll_degree = 2
+innodb_ft_total_cache_size = 640000000
+innodb_io_capacity_max = 8000
+innodb_max_purge_lag = 0
+innodb_max_purge_lag_delay = 0
+innodb_optimize_fulltext_only = OFF
+innodb_rollback_segments = 128
+innodb_sort_buffer_size = 1048576
+innodb_stats_auto_recalc = ON
+innodb_stats_persistent = ON
+innodb_stats_persistent_sample_pages = 20
+innodb_status_output = OFF
+innodb_status_output_locks = OFF
+innodb_monitor_enable =
+interactive_timeout = 7200
+wait_timeout = 86400
+thread_cache_size = 256
+log_output = TABLE
+long_query_time = 1
+back_log = 3000
+max_heap_table_size = 67108864
+max_allowed_packet = 1073741824
+character_set_server = utf8
+transaction_isolation = READ-COMMITTED
+tmp_table_size = 2097152
+log-slow-admin-statements = ON
+lower_case_table_names = 1
+core-file
+skip_name_resolve = 1
+max_write_lock_count = 102400
+sql_mode =
+thread_stack = 262144
+table_open_cache = 16384
+table_open_cache_instances = 32
+table_definition_cache = 16384
+open_files_limit = 655350
+max_prepared_stmt_count = 16382
+connect_timeout = 10
+default_time_zone = SYSTEM
+default_week_format = 0
+div_precision_increment = 4
+eq_range_index_dive_limit = 10
+explicit_defaults_for_timestamp = OFF
+group_concat_max_len = 1024
+max_connect_errors = 100
+log_queries_not_using_indexes = OFF
+max_length_for_sort_data = 1024
+net_read_timeout = 30
+net_retry_count = 10
+net_write_timeout = 60
+query_alloc_block_size = 8192
+slow_launch_time = 2
+# XEngine writes too many logs make /flash full
+log_error_verbosity = 3
+event_scheduler = ON
+bind-address = 0.0.0.0
+max_binlog_size = 524288000
+log_bin_trust_function_creators = ON
+log_slave_updates = ON
+binlog_cache_size = 1073741824
+sync_binlog = 1
+binlog_format = ROW
+log_bin_use_v1_row_events = 1
+enforce_gtid_consistency = ON
+binlog_order_commits = OFF
+rpl_semi_sync_master_enabled = OFF
+rpl_semi_sync_master_timeout = 10000
+rpl_semi_sync_master_trace_level = 32
+rpl_semi_sync_master_wait_no_slave = ON
+slave_exec_mode = strict
+max_relay_log_size = 0
+relay_log_space_limit = 21474836480
+slave_pending_jobs_size_max = 167772160
+slave_net_timeout = 60
+master_info_repository = FILE
+relay_log_info_repository = FILE
+gtid_mode = ON
+# 1 hour
+binlog_expire_logs_seconds = 3600
+init_connect = ''
+autocommit = ON
+automatic_sp_privileges = ON
+binlog_rows_query_log_events = OFF
+binlog_checksum = CRC32
+binlog_row_image = full
+binlog_stmt_cache_size = 32768
+max_binlog_stmt_cache_size = 18446744073709500000
+master_verify_checksum = OFF
+character_set_filesystem = binary
+disconnect_on_expired_password = ON
+end_markers_in_json = OFF
+flush_time = 0
+host_cache_size = 128
+lc_time_names = en_US
+lock_wait_timeout = 31536000
+log_throttle_queries_not_using_indexes = 0
+log_timestamps = SYSTEM
+max_error_count = 64
+max_join_size = 18446744073709551615
+max_seeks_for_key = 18446744073709500000
+max_sort_length = 1024
+max_sp_recursion_depth = 0
+min_examined_row_limit = 0
+net_buffer_length = 16384
+old-style-user-limits = FALSE
+optimizer_prune_level = 1
+optimizer_search_depth = 62
+optimizer_trace_limit = 1
+optimizer_trace_max_mem_size = 16384
+optimizer_trace_offset = -1
+preload_buffer_size = 32768
+range_alloc_block_size = 4096
+safe-user-create = FALSE
+slow_query_log = ON
+stored_program_cache = 256
+sysdate-is-now = FALSE
+transaction_alloc_block_size = 8192
+transaction_prealloc_size = 4096
+updatable_views_with_limit = YES
+loose_primary_degrade_binlog_dump_timeout = 10
+loose_slave_parallel_workers = 8
+loose_rpl_semi_sync_slave_trace_level = 32
+loose_rpl_semi_sync_slave_enabled = OFF
+loose_rpl_semi_sync_master_wait_point = after_commit
+loose_maintain_user_list = 'root,aurora,replicator'
+loose_slave_max_expire_on_master_timeout = 0
+loose_implicit_primary_key = 1
+loose_rds_audit_log_enabled = ON
+loose_rds_set_connection_id_enabled = ON
+loose_slave_trans_sync_level = 0
+loose_replica_lock_wait_timeout = 50
+loose_rds_kill_connections = 20
+loose_session_track_schema = ON
+loose_session_track_state_change = off
+loose_session_track_transaction_info = STATE
+loose_session_track_lsn_change = ON
+loose_maintain_max_connections = 512
+default_authentication_plugin = mysql_native_password
+loose_innodb_trx_hash_sparse_max_times = 3600
+loose_rds_audit_log_strategy = ASYNCHRONOUS
+key_cache_division_limit = 100
+loose_rds_audit_log_event_buffer_size = 2048
+loose_pq_thread_cache_enabled = ON
+loose_innodb_primary_accept_reconnect_max_log_delay = 107374182400
+loose_thread_handling = "one-thread-per-connection"
+max_points_in_geometry = 65536
+session_track_gtids = OFF
+loose_innodb_log_compressed_pages = OFF
+loose_max_parallel_workers = 8
+ssl = 0
+session_track_schema = ON
+loose_performance_schema_max_parallel_query_objects = 4096
+internal_tmp_mem_storage_engine = TempTable
+loose_allocator_policy_high_watermark = 3276M
+innodb_flush_log_at_trx_commit = 1
+innodb_monitor_disable =
+loose_rds_audit_log_format = PLAIN
+loose_optimizer_trace = enabled=off,one_line=off
+innodb_log_checksums = ON
+loose_performance_schema_events_parallel_query_history_size = 10
+loose_innodb_trx_hash_sparse_ratio = 65536
+loose_optimizer_trace_features = greedy_search=on,range_optimizer=on,dynamic_range=on,repeated_subselect=on
+loose_rds_audit_log_connection_policy = ALL
+tls_version = TLSv1,TLSv1.1,TLSv1.2
+max_execution_time = 0
+auto_increment_offset = 1
+key_cache_age_threshold = 300
+range_optimizer_max_mem_size = 8388608
+ngram_token_size = 2
+block_encryption_mode = "aes-128-ecb"
+sha256_password_proxy_users = OFF
+loose_session_track_system_variables = "*"
+ft_min_word_len = 4
+loose_allocator_policy_low_watermark = 2048M
+session_track_state_change = OFF
+ft_max_word_len = 84
+innodb_page_cleaners = 8
+query_prealloc_size = 8192
+mysql_native_password_proxy_users = OFF
+ft_query_expansion_limit = 20
+slave_parallel_type = LOGICAL_CLOCK
+loose_optimizer_switch = index_merge=on,index_merge_union=on,index_merge_sort_union=on,index_merge_intersection=on,engine_condition_pushdown=on,index_condition_pushdown=on,mrr=on,mrr_cost_based=on,block_nested_loop=on,batched_key_access=off,materialization=on,semijoin=on,loosescan=on,firstmatch=on,subquery_materialization_cost_based=on,use_index_extensions=on
+loose_slave_io_thread_max_wait_time = 86400
+opt_enable_rds_priv_strategy = ON
+loose_query_memory_soft_limit = 3277M
+temptable_max_ram = 1073741824
+loose_innodb_trx_hash_sparse_min_size = 128
+loose_min_parallel_workers = 2
+performance_schema = OFF
+loose_primary_fast_lookup = ON
+key_cache_block_size = 1024
+innodb_autoextend_increment = 64
+show_old_temporals = OFF
+loose_rds_kill_user_list = ''
+loose_rds_audit_log_policy = ALL
+loose_innodb_adaptive_hash_index_parts = 8
+loose_rds_audit_log_statement_policy = ALL
+loose_rds_audit_log_row_limit = 200000
+loose_max_parallel_degree = 0
+local_infile = 1
+loose_performance_schema_max_parallel_operator_objects = 1024
+auto_increment_increment = 1
+innodb_deadlock_detect = ON
+
+[mysqldump]
+quick
+max_allowed_packet = 64M
+
+[mysql]
+no-auto-rehash
+prompt = "\\u@\\h : \\d \\R:\\m:\\s> "
+
+[mysqld_safe]
+malloc_conf = "narenas:16,lg_tcache_max:13,dirty_decay_ms:1000,muzzy_decay_ms:0"
+
