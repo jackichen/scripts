@@ -21,18 +21,21 @@ PARAMETERs:\n\
     -c | --chunks=<CHUNKS>: Specify value for chunks, same as <PARALLEL_THREADS> by default\n\
     -H | --host=<hostname>: Specify hostname/ip of mysql database server to load data, localhost by default\n\
     -P | --port=<PORT>: Specify port on which mysql server run\n\
+    -S | --socket=<socket_file>: Specify mysqld socket file to connect\n\
     -u | --username=<USERNAME>: Specify username to connect database server\n\
     -p | --password=<PASSWORD>: Specify password to connect database server\n\
     --parallel=<PARALLEL_THREADS>: Specify number of threads to load data in parallel\n\
     --database=<DATABASE>: Specify name of database to be loaded (will be created during prepare)\n\
     --ddl=<DDL_SQL>: Specify path for DDL SQL commands\n\
     --table=<TABLE_NAME>: Load data for a single table\n\
+    --sql=<SQL_FILE>: Specify path for SQL commands\n\
     -h | --help: Print this help message\n\n\
 COMMAND:\n\
     generate: Generate data for TPC-H\n\
     prepare: Prepare schema for TPC-H\n\
     load: Load data for TPC-H\n\
     verify: Verify prepared schema and count of tables\n\
+    exec_sql: execute command in a specified SQL file\n\
     all: generate, prepare, load and verify in one shot"
 }
 
@@ -79,6 +82,14 @@ while [[ ${OPT_END} -eq 0 ]]; do
         shift;;
     --port=*)
         PORT=$(get_key_value "$1")
+        shift;;
+
+    -S|--socket)
+        shift
+        SOCKET=$(get_key_value "$1")
+        shift;;
+    --socket=*)
+        SOCKET=$(get_key_value "$1")
         shift;;
 
     -u|--username)
@@ -148,6 +159,14 @@ while [[ ${OPT_END} -eq 0 ]]; do
     #--save)
     #    shift
     #    SAVE_ON_LOAD=1;;
+
+    --sql)
+        shift
+        SQL_FILE=$(get_key_value "$1")
+        shift;;
+    --sql=*)
+        SQL_FILE=$(get_key_value "$1")
+        shift;;
 
     -h|--help)
         usage
@@ -236,24 +255,41 @@ function generate_data() {
     cd ${BASE}
 }
 
-function prepare_schema() {
+function set_mysql_cmd() {
     [[ ! -z ${MYSQL_BASE} ]] || which mysql || \
         fatal_error "No mysql command is available, need specify value for --base parameter!"
     [[ -z ${MYSQL_BASE} ]] || [[ -x ${MYSQL_BASE}/bin/mysql ]] || \
         fatal_error "Invalid parameter value for --base, ${MYSQL_BASE}/bin/mysql isn't available!"
 
-    [[ ! -z ${HOST} ]] || HOST=127.0.0.1
-    [[ ! -z ${PORT} ]] || fatal_error "Missing parameter for --port"
-    [[ ! -z ${USERNAME} ]] || fatal_error "Missing parameter for --username"
-    [[ ! -z ${PASSWORD} ]] || fatal_error "Missing parameter for --password"
+    if [[ ! -z ${SOCKET} ]]; then
+        [[ -z ${HOST} ]] || log_info "Ignore host parameter: ${HOST} when connecting with socket file"
+        [[ -z ${PORT} ]] || log_info "Ignore port parameter: ${PORT} when connecting with socket file"
+        if [[ -z ${USERNAME} ]]; then
+            log_info "Connect as root when connection with socket file"
+            USERNAME=root
+        fi
+
+        MYSQL_CMD="${MYSQL_BASE}/bin/mysql -u${USERNAME} -S ${SOCKET}"
+    else
+        [[ ! -z ${HOST} ]] || HOST=127.0.0.1
+        [[ ! -z ${PORT} ]] || fatal_error "Missing parameter for --port"
+        [[ ! -z ${USERNAME} ]] || fatal_error "Missing parameter for --username"
+
+        MYSQL_CMD="${MYSQL_BASE}/bin/mysql -h${HOST} -P${PORT} -u${USERNAME}"
+        if [[ ! -z ${PASSWORD} ]]; then
+            MYSQL_CMD="${MYSQL_CMD} -p${PASSWORD}"
+        else
+            log_warn "Execute mysql command without password for user: ${USERNAME}"
+        fi
+    fi
+}
+
+function prepare_schema() {
     [[ ! -z ${DATABASE} ]] || fatal_error "Missing parameter for --database"
     [[ -f ${DDL_SQL} ]] || fatal_error "Missing parameter for --ddl"
 
-    ${MYSQL_BASE}/bin/mysql -h${HOST} -P${PORT} -u${USERNAME} -p${PASSWORD} \
-        -e "DROP DATABASE IF EXISTS ${DATABASE}; CREATE DATABASE ${DATABASE};" >/dev/null 2>&1
-
-    ${MYSQL_BASE}/bin/mysql -h${HOST} -P${PORT} -u${USERNAME} -p${PASSWORD} \
-        -D ${DATABASE} -e "SET GLOBAL DEFAULT_STORAGE_ENGINE=InnoDB; SOURCE ${DDL_SQL};" >/dev/null 2>&1
+    ${MYSQL_CMD} -e "DROP DATABASE IF EXISTS ${DATABASE}; CREATE DATABASE ${DATABASE};" >/dev/null 2>&1
+    ${MYSQL_CMD} -D ${DATABASE} < ${DDL_SQL}
 }
 
 function load_data_file() {
@@ -264,8 +300,7 @@ function load_data_file() {
     [[ -z ${CHUNK} ]] || TBL_PATH=${TBL_PATH}.${CHUNK}
 
     [[ -f ${TBL_PATH} ]] || fatal_error "Can't find file ${TBL_PATH} to load!"
-    ${MYSQL_BASE}/bin/mysql -h ${HOST} -P${PORT} -u${USERNAME} -p${PASSWORD} -D ${DATABASE} \
-        -e "LOAD DATA LOCAL INFILE '${TBL_PATH}' INTO TABLE ${TBL_NAME} FIELDS TERMINATED BY '|';"
+    ${MYSQL_CMD} -D ${DATABASE} -e "LOAD DATA LOCAL INFILE '${TBL_PATH}' INTO TABLE ${TBL_NAME} FIELDS TERMINATED BY '|';"
 
     if [[ ! -z ${CHUNK} ]]; then
         log_info "Loaded data part ${CHUNK} for ${DATABASE}.${TBL_NAME} from ${TBL_PATH} ..."
@@ -309,8 +344,7 @@ function load_table_data() {
         log_info "All ${PARALLEL} threads for ${DATABASE}.${tbl_name} finish"
 
         #if [[ ${SAVE_ON_LOAD} -eq 1 ]]; then
-        #    ${MYSQL_BASE}/bin/mysql -h ${HOST} -P${PORT} -u${USERNAME} -p${PASSWORD} \
-        #        -e "SET GLOBAL innodb_imci_save_checkpoint = ON;"
+        #    ${MYSQL_CMD} -e "SET GLOBAL innodb_imci_save_checkpoint = ON;"
         #    log_info "imci checkpoint is saved!"
         #fi
     elif [[ ${CHUNKS} -gt 1 ]]; then
@@ -323,14 +357,6 @@ function load_table_data() {
 }
 
 function load_data() {
-    [[ ! -z ${MYSQL_BASE} ]] || which mysql || \
-        fatal_error "No mysql command is available, need specify value for --base parameter!"
-    [[ -z ${MYSQL_BASE} ]] || [[ -x ${MYSQL_BASE}/bin/mysql ]] || \
-        fatal_error "Invalid parameter value for --base, ${MYSQL_BASE}/bin/mysql isn't available!"
-    [[ ! -z ${HOST} ]] || HOST=127.0.0.1
-    [[ ! -z ${PORT} ]] || fatal_error "Missing parameter for --port"
-    [[ ! -z ${USERNAME} ]] || fatal_error "Missing parameter for --username"
-    [[ ! -z ${PASSWORD} ]] || fatal_error "Missing parameter for --password"
     [[ ! -z ${DATABASE} ]] || fatal_error "Missing parameter for --database"
     [[ -d ${DATA_DIR} ]] || fatal_error "Missing parameter for --data"
 
@@ -359,34 +385,22 @@ function load_data() {
 }
 
 function verify() {
-    [[ ! -z ${MYSQL_BASE} ]] || which mysql || \
-        fatal_error "No mysql command is available, need specify value for --base parameter!"
-    [[ -z ${MYSQL_BASE} ]] || [[ -x ${MYSQL_BASE}/bin/mysql ]] || \
-        fatal_error "Invalid parameter value for --base, ${MYSQL_BASE}/bin/mysql isn't available!"
-
-    [[ ! -z ${HOST} ]] || HOST=127.0.0.1
-    [[ ! -z ${PORT} ]] || fatal_error "Missing parameter for --port"
-    [[ ! -z ${USERNAME} ]] || fatal_error "Missing parameter for --username"
-    [[ ! -z ${PASSWORD} ]] || fatal_error "Missing parameter for --password"
     [[ ! -z ${DATABASE} ]] || fatal_error "Missing parameter for --database"
 
     # verify schema
     for tbl_name in region nation part supplier partsupp customer orders lineitem; do
-        ${MYSQL_BASE}/bin/mysql -h ${HOST} -P${PORT} -u${USERNAME} -p${PASSWORD} \
-            -D ${DATABASE} -e "SHOW CREATE TABLE ${tbl_name}\G"
+        ${MYSQL_CMD} -D ${DATABASE} -e "SHOW CREATE TABLE ${tbl_name}\G"
     done
 
     # verify data
-    ${MYSQL_BASE}/bin/mysql -h ${HOST} -P${PORT} -u${USERNAME} -p${PASSWORD} \
-        -D ${DATABASE} -e "SELECT * FROM INFORMATION_SCHEMA.IMCI_INDEXES ORDER BY TABLE_ID;"
+    ${MYSQL_CMD} -D ${DATABASE} -e "SELECT * FROM INFORMATION_SCHEMA.IMCI_INDEXES ORDER BY TABLE_ID;"
 
     if [[ -d ${DATA_DIR} ]]; then
         echo "+------------+--------------+-------------------+"
         echo "| TABLE_NAME | COUNT_IN_DB  | COUNT_IN_DATAFILE |"
         echo "+------------+--------------+-------------------+"
         for tbl_name in region nation part supplier partsupp customer orders lineitem; do
-            query_count=`${MYSQL_BASE}/bin/mysql -h ${HOST} -P${PORT} -u${USERNAME} -p${PASSWORD} \
-                             -D ${DATABASE} -N -e "SELECT COUNT(*) AS ${tbl_name}_count FROM ${tbl_name};" 2>/dev/null`
+            query_count=`${MYSQL_CMD} -D ${DATABASE} -N -e "SELECT COUNT(*) AS ${tbl_name}_count FROM ${tbl_name};" 2>/dev/null`
             data_count=`wc -l ${DATA_DIR}/${tbl_name}.tbl* | tail -n 1 | awk '{print $1}'`
             [[ ${query_count} -eq ${data_count} ]] || stat="  \033[0;31m!!!not match\033[0m"
             echo -e "|${tbl_name} | ${query_count}  | ${data_count} |${stat} "
@@ -398,12 +412,18 @@ function verify() {
         echo "| TABLE_NAME | COUNT_IN_DB |"
         echo "+------------+-------------+"
         for tbl_name in region nation part supplier partsupp customer orders lineitem; do
-            query_count=`${MYSQL_BASE}/bin/mysql -h ${HOST} -P${PORT} -u${USERNAME} -p${PASSWORD} \
-                             -D ${DATABASE} -N -e "SELECT COUNT(*) AS ${tbl_name}_count FROM ${tbl_name};" 2>/dev/null`
+            query_count=`${MYSQL_CMD} -D ${DATABASE} -N -e "SELECT COUNT(*) AS ${tbl_name}_count FROM ${tbl_name};" 2>/dev/null`
             echo -e "|${tbl_name}  | ${query_count}  |"
         done
         echo "+------------+-------------+"
     fi
+}
+
+function exec_sql() {
+  if [[ ! -z ${SQL_FILE} ]] && [[ -f ${SQL_FILE} ]]; then
+    log_info "Will execute SQL command in ${SQL_FILE}"
+    ${MYSQL_CMD} -D ${DATABASE} < ${SQL_FILE}
+  fi
 }
 
 case "$1" in
@@ -411,16 +431,24 @@ case "$1" in
         generate_data
         ;;
     "prepare")
+        set_mysql_cmd
         prepare_schema
         ;;
     "load")
+        set_mysql_cmd
         load_data
         ;;
     "verify")
+        set_mysql_cmd
         verify
+        ;;
+    "exec_sql")
+        set_mysql_cmd
+        exec_sql
         ;;
     "all")
         generate_data
+        set_mysql_cmd
         prepare_schema
         load_data
         verify
