@@ -31,61 +31,72 @@ innodb_data_file_path = ./ibdata1:50M:autoextend
 
 #IMCI settings
 # parallel ddl
-#innodb_polar_max_pddl_threads
-#innodb_polar_parallel_ddl_threads
-#polar_enable_imci
+#AP_innodb_polar_max_pddl_threads = 128
+#AP_innodb_polar_parallel_ddl_threads = 128
+#AP_polar_enable_imci = ON
 loose_imci_background_build_threads = 2
 loose_imci_parallel_build_threads_per_table = 32
 loose_imci_lru_cache_capacity = 100G
 
 # TABLE-LEVEL MULTI-MASTER
 #innodb_log_trace_switch='rpc_info,gtm_info,global_db,ddl_file,global_table,info_file,lock_redo,forward_meta,log_ddl,lsn_check,gbp_lru,sync_info'
-#loose_polar_enable_imci_with_mm = ON
-#loose_disable_sdi_file = ON
-#loose_mm_trans_dist = OFF
-#loose_innodb_global_ddl_lock_file_path = <MM_HOME>/data
+#MM_COMMON_disable_sdi_file = ON
+#MM_COMMON_mm_trans_dist = ON
+#MM_COMMON_mm_skip_check_procedure = ON
+#MM_COMMON_mm_redistribute_roundrobin = ON
+#MM_COMMON_enable_pcr_admin = ON
+#MM_COMMON_innodb_mm_reserve_extent_size = 128
+#MM_COMMON_innodb_global_ddl_lock_file_path = <MM_HOME>/data
+#MM_COMMON_innodb_cc_master_log_dir = <MM_HOME>/data
+#MM_COMMON_report-port = <PORT>
+#MM_COMMON_polar_enable_imci_with_mm = ON
+#loose_innodb_cc_glog_dir = <GLOG_DIR>
 
-# For CC
-loose_innodb_cc_worker_threads = 8
-loose_innodb_cc_gbp_instances = 8
-loose_innodb_cc_gbp_size = 4G
-loose_innodb_cc_masters = 32
-loose_innodb_mm_sys_space_flush_disable = false
-loose_mm_global_binlog_mode = ALL_MASTER
-#loose_innodb_cc_notify_port = <PORT>
-#loose_mm_is_cc = ON
-#loose_innodb_cc = ON
-#loose_innodb_cc_port = <RDMA_PORT>
-#loose_innodb_cc_glog = ON
-#loose_innodb_cc_glog_dir = <CC_HOME>/glog
-#loose_innodb_cc_master_log_dir = <MM_HOME>/data
-#loose_innodb_cc_current_master_num
-# Only enable this when deploy global standby
+# For MM-CC
+#MM_CC_innodb_cc_worker_threads = 8
+#MM_CC_innodb_cc_gbp_instances = 8
+#MM_CC_innodb_cc_gbp_size = 4G
+#MM_CC_innodb_cc_masters = 32
+#MM_CC_innodb_mm_sys_space_flush_disable = false
+#MM_CC_mm_global_binlog_mode = ALL_MASTER
+#MM_CC_mm_is_cc = ON
+#MM_CC_innodb_cc = ON
+#MM_CC_innodb_cc_port = <RDMA_PORT>
+#MM_CC_innodb_cc_notify_port = <CC_PORT>
+#MM_CC_innodb_cc_glog = ON
+#MM_CC_innodb_cc_current_master_num = <MASTER_COUNT>
 #loose_innodb_cc_glog_combine_all = true
 
-# FOR RW
-loose_mm_file_per_db = ON
-loose_mm_binlog_pre_allocate = ON
-loose_innodb_cc_perf_monitor_enable = ON
-loose_innodb_mm_skip_purge = ON
-loose_innodb_mm_rdma_perf_monitor_enable = ON
-loose_innodb_mm_clean_batch_size = 64
-loose_innodb_mm_log_reserve_files = 1
-loose_innodb_mm_clean_threads = 4
-#loose_mm_forward_file_meta_operation = ON
-#loose_mm_is_master = ON
-#loose_mm_master_id = <MM_ID>
-#loose_innodb_mm_cc_host = <CC_HOST>
-#loose_innodb_mm_cc_port = <RDMA_PORT>
-#loose_innodb_mm_cc_notify_port = <CC_PORT>
-#loose_innodb_mm = ON
-#loose_innodb_mm_master_id = <MM_ID>
-#loose_innodb_gtm_enabled = ON
-#loose_innodb_reserve_extent_size = 128
+# FOR MM-RW
+#MM_RW_mm_binlog_pre_allocate = ON
+#MM_RW_mm_file_per_db = ON
+#MM_RW_mm_forward_file_meta_operation = ON
+#MM_RW_mm_is_master = ON
+#MM_RW_mm_master_id = <MM_ID>
+#MM_RW_innodb_cc_perf_monitor_enable = ON
+#MM_RW_innodb_mm_skip_purge = ON
+#MM_RW_innodb_mm_rdma_perf_monitor_enable = ON
+#MM_RW_innodb_mm_clean_batch_size = 64
+#MM_RW_innodb_mm_log_reserve_files = 1
+#MM_RW_innodb_mm_clean_threads = 4
+#MM_RW_innodb_mm_cc_host = <CC_HOST>
+#MM_RW_innodb_mm_cc_port = <RDMA_PORT>
+#MM_RW_innodb_mm_cc_notify_port = <CC_PORT>
+#MM_RW_innodb_mm = ON
+#MM_RW_innodb_mm_master_id = <MM_ID>
+#MM_RW_innodb_gtm_enabled = ON
+#MM_RW_innodb_reserve_extent_size = 128
+#MM_RW_innodb_polar_copy_page = ON
+#MM_RW_innodb_mm_master_name = "master_<MM_ID>"
 
-# For GLOBAL standby/replica
-#loose_innodb_global_standby = true
-#loose_innodb_standby_high_performance_parse = true
+# For GLOBAL standby
+#MM_GS_innodb_global_standby = true
+#MM_GS_innodb_standby_high_performance_parse = true
+
+# For GLOBAL replica
+#MM_GR_mm_is_global_replica = true
+#MM_GR_mm_cc_data_dir = <CC_DATADIR>
+#MM_GR_innodb_global_replica = true
 
 # disable PQ
 loose_max_parallel_degree = 0
@@ -93,51 +104,50 @@ loose_max_parallel_degree = 0
 secure_file_priv =
 
 #xengine settings
-loose_xengine = 0
-loose_xengine_datadir=<DATA_DIR>/xengine
+#XE_xengine
+#XE_xengine_datadir=<DATA_DIR>/xengine
 
 #default_storage_engine = xengine
 #memory & cache
-loose_xengine_db_total_write_buffer_size=8G
-loose_xengine_db_write_buffer_size=8G
-loose_xengine_block_cache_size=5G
-loose_xengine_row_cache_size=2G
-loose_xengine_max_total_wal_size=10G
+#XE_xengine_db_total_write_buffer_size=8G
+#XE_xengine_db_write_buffer_size=8G
+#XE_xengine_block_cache_size=5G
+#XE_xengine_row_cache_size=2G
+#XE_xengine_max_total_wal_size=10G
 #xengine_block_size=16384
 #xengine_arena_block_size=32768
 
 #write buffer
-loose_xengine_write_buffer_size=178M
-loose_xengine_max_write_buffer_number=10
-loose_xengine_max_write_buffer_number_to_maintain=10
+#XE_xengine_write_buffer_size=178M
+#XE_xengine_max_write_buffer_number=10
+#XE_xengine_max_write_buffer_number_to_maintain=10
 
 #compaciton
-loose_xengine_min_write_buffer_number_to_merge=1
-loose_xengine_level0_file_num_compaction_trigger=64
-loose_xengine_level0_layer_num_compaction_trigger=8
-loose_xengine_level1_extents_major_compaction_trigger=1000
-loose_xengine_disable_auto_compactions=false
-loose_xengine_level2_usage_percent=70
-loose_xengine_flush_delete_percent=70
-loose_xengine_compaction_delete_percent=50
-loose_xengine_flush_delete_percent_trigger=700000
-loose_xengine_flush_delete_record_trigger=700000
-loose_xengine_scan_add_blocks_limit=100
-loose_xengine_compression_per_level=kNoCompression:kZSTD:kZSTD
+#XE_xengine_min_write_buffer_number_to_merge=1
+#XE_xengine_level0_file_num_compaction_trigger=64
+#XE_xengine_level0_layer_num_compaction_trigger=8
+#XE_xengine_level1_extents_major_compaction_trigger=1000
+#XE_xengine_disable_auto_compactions=false
+#XE_xengine_level2_usage_percent=70
+#XE_xengine_flush_delete_percent=70
+#XE_xengine_compaction_delete_percent=50
+#XE_xengine_flush_delete_percent_trigger=700000
+#XE_xengine_flush_delete_record_trigger=700000
+#XE_xengine_scan_add_blocks_limit=100
+#XE_xengine_compression_per_level=kNoCompression:kZSTD:kZSTD
 #xengine_compression_options = "-14:1:0"
 
 #data durability property
-loose_xengine_flush_log_at_trx_commit=1
-loose_xengine_enable_2pc=0
+#XE_xengine_flush_log_at_trx_commit=1
+#XE_xengine_enable_2pc=0
 
 #transaction pipeline performance
-loose_xengine_batch_group_slot_array_size=5
-loose_xengine_batch_group_max_group_size=15
-loose_xengine_batch_group_max_leader_wait_time_us=50
-
-loose_xengine_max_background_compactions=12
-loose_xengine_base_background_compactions=8
-loose_xengine_max_background_flushes=8
+#XE_xengine_batch_group_slot_array_size=5
+#XE_xengine_batch_group_max_group_size=15
+#XE_xengine_batch_group_max_leader_wait_time_us=50
+#XE_xengine_max_background_compactions=12
+#XE_xengine_base_background_compactions=8
+#XE_xengine_max_background_flushes=8
 
 # polardb settings
 #polar_master_host

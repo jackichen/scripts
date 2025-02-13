@@ -20,7 +20,6 @@ OPTIONs:\n\
     -p | --port=<PORT>: base port of multi master cluster\n\
     -m | --multi-master: For multi master cluster\n\
     --master-count <NUM> | --master-count=<NUM> : number of master servers in multi master cluster\n\
-    --master-count=<NUM> : number of master servers in multi master cluster\n\
     -H | --host=<hostname>: Specify hostname/ip to deploy mysql database server, localhost by default\n\
     -h | --help: Print this help message\n\n\
 COMMAND:\n\
@@ -30,8 +29,9 @@ COMMAND:\n\
     restart: Stop database server if started, and start database server again\n\
     status: Check whether database server is running\n\
     gstart: start mysqld server with gdb\n\
-    gdb: start gdb to attach mysqld server if running\n\
-    kill: kill mysqld server if running\n\
+    gdb: start gdb to attach mysqld if server running\n\
+    pstack : attach mysqld and print stack if server running\n\
+    kill: kill mysqld if server running\n\
     conn: Login to the database server with root user if started"
 }
 
@@ -70,10 +70,6 @@ while [[ ${OPT_END} -eq 0 ]]; do
         shift
         MASTER_COUNT=$(get_key_value "$1")
         shift;;
-    --master-count)
-        shift
-        MASTER_COUNT=$(get_key_value "$1")
-        shift;;
     --master-count=*)
         MASTER_COUNT=$(get_key_value "$1")
         shift;;
@@ -100,12 +96,16 @@ done
 if [[ ${FOR_MM} -eq 1 ]]; then
   [[ -z ${CC_PORT} ]] && log_error "Missing parameter for --port" && exit 1
   CC_HOME=${DATA_HOME}/cc_${CC_PORT}
+  CR_PORT=`expr ${CC_PORT} + 11`
+  CR_HOME=${DATA_HOME}/gr_${CR_PORT}
+  CA_PORT=`expr ${CC_PORT} + 12`
+  CA_HOME=${DATA_HOME}/gr_${CA_PORT}
   GS_PORT=`expr ${CC_PORT} + 20`
   GS_HOME=${DATA_HOME}/gs_${GS_PORT}
   GR_PORT=`expr ${CC_PORT} + 21`
-  GR_HOME=${DATA_HOME}/gr_${GR_PORT}
+  GR_HOME=${DATA_HOME}/gsr_${GR_PORT}
   GA_PORT=`expr ${CC_PORT} + 22`
-  GA_HOME=${DATA_HOME}/gr_${GA_PORT}
+  GA_HOME=${DATA_HOME}/gsr_${GA_PORT}
   # execute command
   case "$1" in
     "start")
@@ -117,15 +117,18 @@ if [[ ${FOR_MM} -eq 1 ]]; then
         start_mysqld ${MYSQL_BASE}/bin ${HOST} ${RW_PORT} ${RW_HOME}/my.cnf
         ((MM_ID++))
       done
+      start_mysqld ${MYSQL_BASE}/bin ${HOST} ${CR_PORT} ${CR_HOME}/my.cnf
+      start_mysqld ${MYSQL_BASE}/bin ${HOST} ${CA_PORT} ${CA_HOME}/my.cnf
       start_mysqld ${MYSQL_BASE}/bin ${HOST} ${GS_PORT} ${GS_HOME}/my.cnf
       start_mysqld ${MYSQL_BASE}/bin ${HOST} ${GR_PORT} ${GR_HOME}/my.cnf
       start_mysqld ${MYSQL_BASE}/bin ${HOST} ${GA_PORT} ${GA_HOME}/my.cnf
       ;;
     "stop")
       stop_mysqld ${MYSQL_BASE}/bin ${HOST} ${GR_PORT}
-      yy
       stop_mysqld ${MYSQL_BASE}/bin ${HOST} ${GA_PORT}
       stop_mysqld ${MYSQL_BASE}/bin ${HOST} ${GS_PORT}
+      stop_mysqld ${MYSQL_BASE}/bin ${HOST} ${CR_PORT}
+      stop_mysqld ${MYSQL_BASE}/bin ${HOST} ${CA_PORT}
       MM_ID=1
       while [[ ${MM_ID} -le ${MASTER_COUNT} ]]; do
         RW_PORT=`expr ${CC_PORT} + ${MM_ID}`
@@ -138,6 +141,8 @@ if [[ ${FOR_MM} -eq 1 ]]; then
       kill_mysqld ${MYSQL_BASE}/bin ${HOST} ${GR_PORT}
       kill_mysqld ${MYSQL_BASE}/bin ${HOST} ${GA_PORT}
       kill_mysqld ${MYSQL_BASE}/bin ${HOST} ${GS_PORT}
+      kill_mysqld ${MYSQL_BASE}/bin ${HOST} ${CR_PORT}
+      kill_mysqld ${MYSQL_BASE}/bin ${HOST} ${CA_PORT}
       MM_ID=1
       while [[ ${MM_ID} -le ${MASTER_COUNT} ]]; do
         RW_PORT=`expr ${CC_PORT} + ${MM_ID}`
@@ -150,6 +155,8 @@ if [[ ${FOR_MM} -eq 1 ]]; then
       stop_mysqld ${MYSQL_BASE}/bin ${HOST} ${GR_PORT}
       stop_mysqld ${MYSQL_BASE}/bin ${HOST} ${GA_PORT}
       stop_mysqld ${MYSQL_BASE}/bin ${HOST} ${GS_PORT}
+      stop_mysqld ${MYSQL_BASE}/bin ${HOST} ${CR_PORT}
+      stop_mysqld ${MYSQL_BASE}/bin ${HOST} ${CA_PORT}
       MM_ID=1
       while [[ ${MM_ID} -le ${MASTER_COUNT} ]]; do
         RW_PORT=`expr ${CC_PORT} + ${MM_ID}`
@@ -169,6 +176,8 @@ if [[ ${FOR_MM} -eq 1 ]]; then
         start_mysqld ${MYSQL_BASE}/bin ${HOST} ${RW_PORT} ${RW_HOME}/my.cnf
         ((MM_ID++))
       done
+      start_mysqld ${MYSQL_BASE}/bin ${HOST} ${CA_PORT} ${CA_HOME}/my.cnf
+      start_mysqld ${MYSQL_BASE}/bin ${HOST} ${CR_PORT} ${CR_HOME}/my.cnf
       start_mysqld ${MYSQL_BASE}/bin ${HOST} ${GS_PORT} ${GS_HOME}/my.cnf
       start_mysqld ${MYSQL_BASE}/bin ${HOST} ${GR_PORT} ${GR_HOME}/my.cnf
       start_mysqld ${MYSQL_BASE}/bin ${HOST} ${GA_PORT} ${GA_HOME}/my.cnf
@@ -179,8 +188,10 @@ if [[ ${FOR_MM} -eq 1 ]]; then
           log_info "PolarDB Cache Center server is running with pid=${pid} at ${HOST}:${CC_PORT}"
           ${MYSQL_BASE}/bin/mysql -uroot -h127.0.0.1 -P${CC_PORT} -e "SELECT * FROM INFORMATION_SCHEMA.INNODB_CLUSTER_REGISTRY;"
           ${MYSQL_BASE}/bin/mysql -uroot -h127.0.0.1 -P${CC_PORT} -e "SHOW POLAR GLOBAL STANDBYS;"
+          cc_is_alive=1
       else
           log_info "PolarDB Cache Center server is not running at ${HOST}:${CC_PORT}"
+          cc_is_alive=0
       fi
       MM_ID=1
       while [[ ${MM_ID} -le ${MASTER_COUNT} ]]; do
@@ -193,24 +204,39 @@ if [[ ${FOR_MM} -eq 1 ]]; then
         fi
         ((MM_ID++))
       done
-      pid=$(check_mysqld ${MYSQL_BASE}/bin ${HOST} ${GS_PORT})
-      if [[ ${pid} -ne 0 ]]; then
-          log_info "PolarDB Global Standby server is running with pid=${pid} at ${HOST}:${GS_PORT}"
-          ${MYSQL_BASE}/bin/mysql -uroot -h127.0.0.1 -P${GS_PORT} -e "SHOW POLAR REPLICAS;"
-      else
-          log_info "PolarDB Global Standby server is not running at ${HOST}:${GS_PORT}"
-      fi
-      pid=$(check_mysqld ${MYSQL_BASE}/bin ${HOST} ${GR_PORT})
-      if [[ ${pid} -ne 0 ]]; then
-          log_info "PolarDB Global Replica server is running with pid=${pid} at ${HOST}:${GR_PORT}"
-      else
-          log_info "PolarDB Global Replica server is not running at ${HOST}:${GR_PORT}"
-      fi
-      pid=$(check_mysqld ${MYSQL_BASE}/bin ${HOST} ${GA_PORT})
-      if [[ ${pid} -ne 0 ]]; then
-          log_info "PolarDB Global AP RO server is running with pid=${pid} at ${HOST}:${GA_PORT}"
-      else
-          log_info "PolarDB Global AP RO server is not running at ${HOST}:${GA_PORT}"
+      if [[ ${cc_is_alive} -eq 1 ]]; then
+        pid=$(check_mysqld ${MYSQL_BASE}/bin ${HOST} ${CR_PORT})
+        if [[ ${pid} -ne 0 ]]; then
+            log_info "PolarDB Global Replica server is running with pid=${pid} at ${HOST}:${CR_PORT}"
+        else
+            log_info "PolarDB Global Replica server is not running at ${HOST}:${CR_PORT}"
+        fi
+        pid=$(check_mysqld ${MYSQL_BASE}/bin ${HOST} ${CA_PORT})
+        if [[ ${pid} -ne 0 ]]; then
+            log_info "PolarDB Global AP RO server is running with pid=${pid} at ${HOST}:${CA_PORT}"
+        else
+            log_info "PolarDB Global AP RO server is not running at ${HOST}:${CA_PORT}"
+        fi
+        pid=$(check_mysqld ${MYSQL_BASE}/bin ${HOST} ${GS_PORT})
+        if [[ ${pid} -ne 0 ]]; then
+            log_info "PolarDB Global Standby server is running with pid=${pid} at ${HOST}:${GS_PORT}"
+            ${MYSQL_BASE}/bin/mysql -uroot -h127.0.0.1 -P${GS_PORT} -e "SHOW POLAR REPLICAS;"
+
+            pid=$(check_mysqld ${MYSQL_BASE}/bin ${HOST} ${GR_PORT})
+            if [[ ${pid} -ne 0 ]]; then
+                log_info "PolarDB Global Standby Replica server is running with pid=${pid} at ${HOST}:${GR_PORT}"
+            else
+                log_info "PolarDB Global Standby Replica server is not running at ${HOST}:${GR_PORT}"
+            fi
+            pid=$(check_mysqld ${MYSQL_BASE}/bin ${HOST} ${GA_PORT})
+            if [[ ${pid} -ne 0 ]]; then
+                log_info "PolarDB Global Standby AP RO server is running with pid=${pid} at ${HOST}:${GA_PORT}"
+            else
+                log_info "PolarDB Global Standby AP RO server is not running at ${HOST}:${GA_PORT}"
+            fi
+        else
+            log_info "PolarDB Global Standby server is not running at ${HOST}:${GS_PORT}"
+        fi
       fi
       ;;
     *)

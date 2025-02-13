@@ -20,8 +20,12 @@ OPTIONs:\n\
     -d | --data=<MYSQL_DATADIR>: Specify mysql data directory\n\
     -p | --port=<PORT>: Specify port on which mysql server run\n\
     -a | --ap: Enable AP function on master node\n\
+    -x | --xengine: Enable XEngine function\n\
     -m | --multi-master: Deploy multi master cluster\n\
-   --master-count <NUM> | --master-count=<NUM> : number of master servers in multi master cluster\n\
+    --master-count <NUM> | --master-count=<NUM> : number of master servers in multi master cluster\n\
+    --global-standby: enable global standby\n\
+    --global-standby-replica: enable global standby replica, 1 standard RO and 1 AP RO\n\
+    --global-replica: enable global replica with CC, 1 standard RO and 1 AP RO\n\
     -r | --replica=<REPLICA_CONF_STRING>: Specify configuration of replica node(s),\n\
                                           multiple configratuon values are seperated by ';'\n\
     -s | --standby=<STANDBY_CONF_STRING>: Specify configuration of standby node(s),\n\
@@ -44,6 +48,10 @@ IS_AP=0
 FOR_MM=0
 MASTER_COUNT=0
 REPLICA_COUNT=0
+XENGINE=0
+GLOBAL_STANDBY=0
+GLOBAL_STANDBY_REPLICA=0
+GLOBAL_REPLICA=0
 while [[ ${OPT_END} -eq 0 ]]; do
     case "$1" in
     -b | --base)
@@ -76,6 +84,15 @@ while [[ ${OPT_END} -eq 0 ]]; do
     -m | --multi-master)
         FOR_MM=1
         shift;;
+    --global-standby)
+        GLOBAL_STANDBY=1
+        shift;;
+    --global-standby-replica)
+        GLOBAL_STANDBY_REPLICA=1
+        shift;;
+    --global-replica)
+        GLOBAL_REPLICA=1
+        shift;;
     --master-count)
         shift
         MASTER_COUNT=$(get_key_value "$1")
@@ -100,6 +117,9 @@ while [[ ${OPT_END} -eq 0 ]]; do
     --standby=*)
         STANDBY_CONF_STR=$(get_key_value "$1")
         shift;;
+    -x | --xengine)
+        XENGINE=1
+        shift;;
     -h | --help)
         usage
         exit 0;;
@@ -118,9 +138,16 @@ MASTER_HOST=$(hostname -i)
 REPL_USER="replicator"
 REPL_PASS="passw0rd"
 
+function is_xengine_enabled() {
+  match=$(grep -w '^loose_xengine' $1 | wc -l)
+  if [[ ${match} -eq 0 ]]; then return 0; fi
+
+  return 1
+}
+
 function deploy_master()
 {
-    log_info "Deploy polardb master at port=${MASTER_PORT}"
+    log_info "Deploy polardb master at port=${MASTER_PORT} XENGINE=${XENGINE} IMCI=${IS_AP}"
     # init data home directory with local disk
     init_mysql_datadir ${MASTER_HOST} ${MASTER_HOME} 0
  
@@ -138,6 +165,9 @@ function deploy_master()
                -e "s/#innodb_polar_parallel_ddl_threads/innodb_polar_parallel_ddl_threads = 128/g" \
                -e "s/#polar_enable_imci/polar_enable_imci = ON/g" \
                   ${MY_CNF}
+    fi
+    if [[ ${XENGINE} -eq 1 ]]; then
+        sed -i -e "s/^#XE/loose/g" ${MY_CNF}
     fi
     get_mysql_params ${MY_CNF}
 
@@ -191,7 +221,9 @@ function deploy_standby_copy_data()
         [[ ${stat} -eq 0 ]] || fatal_error "Invalid value of basedir for standby"
     fi
 
-    log_info "Deploy polardb standby node on ${STANDBY_HOST}:${STANDBY_PORT} ..."
+    is_xengine_enabled ${MASTER_HOME}/my.cnf
+    is_xengine=$?
+    log_info "Deploy polardb standby node on ${STANDBY_HOST}:${STANDBY_PORT} XENGINE=${is_xengine} ..."
     # set data directory of standby
     exec_cmd ${STANDBY_HOST} "/bin/rm -rf ${STANDBY_HOME}"
     exec_cmd ${STANDBY_HOST} "mkdir -p ${STANDBY_HOME}" || fatal_error "failed to init data directory for standby node"
@@ -220,6 +252,9 @@ function deploy_standby_copy_data()
            -e "s/#polar_master_user_name/polar_master_user_name = ${REPL_USER}/g" \
            -e "s/#polar_master_user_password/polar_master_user_password = ${REPL_PASS}/g" \
            ${MY_CNF}
+    if [[ ${is_xengine} -eq 1 ]]; then
+        sed -i -e "s/^#XE/loose/g" ${MY_CNF}
+    fi
     get_mysql_params ${MY_CNF}
 
     if [[ $(is_local ${STANDBY_HOST}) -eq 1 ]]; then
@@ -240,7 +275,7 @@ function deploy_standbys()
         deploy_standby_copy_data ${STANDBY_CONF}
     done
 
-    log_info "Start master node"
+    log_info "Start master node for deploying standby node"
     start_mysqld ${MYSQL_BASE}/bin ${MASTER_HOST} ${MASTER_PORT} ${MASTER_HOME}/my.cnf || fatal_error "Failed to start master node after cloning"
 
     # start all standby nodes
@@ -262,7 +297,7 @@ function deploy_standbys()
 function deploy_replicas()
 {
     local HOST_ID=$1
-    local is_global=$2
+    local is_gs_ro=$2
 
     REPLICA_HOST=${MASTER_HOST}
     REPLICA_BASE=${MYSQL_BASE}
@@ -271,11 +306,10 @@ function deploy_replicas()
         local REPLICA_HOME=$(echo ${REPLICA_CONF} | awk -F':' '{print $2}')
         local REPLICA_AP=$(echo ${REPLICA_CONF} | awk -F':' '{print $3}')
 
-        log_info "deploy replica $REPLICA_HOST:$REPLICA_PORT"
-
         ls /${MASTER_HOME}/data || fatal_error "Can't access data dir of master node for replica!"
-
-        log_info "Deploy polardb replica node on ${REPLICA_HOST}:${REPLICA_PORT} ..."
+        is_xengine_enabled ${MASTER_HOME}/my.cnf
+        is_xengine=$?
+        log_info "Deploy polardb replica node on ${REPLICA_HOST}:${REPLICA_PORT} XENGINE=${is_xengine} IMCI=${REPLICA_AP}..."
         ((HOST_ID++))
         init_mysql_datadir ${REPLICA_HOST} ${REPLICA_HOME} 1
 
@@ -295,13 +329,68 @@ function deploy_replicas()
                ${MY_CNF}
 
         if [[ ${REPLICA_AP} -eq 1 ]]; then
-            sed -i -e "s/#innodb_polar_max_pddl_threads/innodb_polar_max_pddl_threads = 128/g" \
-                   -e "s/#innodb_polar_parallel_ddl_threads/innodb_polar_parallel_ddl_threads = 128/g" \
-                   -e "s/#polar_enable_imci/polar_enable_imci = ON/g" \
-                   ${MY_CNF}
+            sed -i -e "s/#AP/loose/g" ${MY_CNF}
         fi
-        if [[ ${is_global} -eq 1 ]]; then
-            sed -i -e "s/^#loose_innodb_global_standby /loose_innodb_global_standby /g" ${MY_CNF}
+        if [[ ${is_gs_ro} -eq 1 ]]; then
+            sed -i -e "s/^#MM_GS/loose/g" ${MY_CNF}
+        fi
+
+        if [[ ${is_xengine} -eq 1 ]]; then
+            sed -i -e "s/^#XE/loose/g" ${MY_CNF}
+        fi
+
+        get_mysql_params ${MY_CNF}
+        cp ${MY_CNF} ${REPLICA_HOME}/my.cnf || fatal_error "failed to copy my.cnf"
+        /bin/rm /tmp/my.cnf
+
+        start_mysqld ${REPLICA_BASE}/bin ${REPLICA_HOST} ${REPLICA_PORT} ${REPLICA_HOME}/my.cnf
+
+        log_info "============================================================"
+    done
+
+    ${MYSQL_BASE}/bin/mysql -uroot -h127.0.0.1 -P${MASTER_PORT} -e "SHOW POLAR replicas;"
+}
+
+# Register replica with CC node
+function deploy_cc_replicas()
+{
+    local HOST_ID=$1
+    local RW_HOME=$2
+
+    REPLICA_HOST=${MASTER_HOST}
+    REPLICA_BASE=${MYSQL_BASE}
+    for REPLICA_CONF in `echo ${REPLICA_CONF_STR} | sed 's/;/ /g'`; do
+        local REPLICA_PORT=$(echo ${REPLICA_CONF} | awk -F':' '{print $1}')
+        local REPLICA_HOME=$(echo ${REPLICA_CONF} | awk -F':' '{print $2}')
+        local REPLICA_AP=$(echo ${REPLICA_CONF} | awk -F':' '{print $3}')
+
+        ls /${RW_HOME}/data || fatal_error "Can't access data dir of master node for replica!"
+        log_info "Deploy polardb replica node on ${REPLICA_HOST}:${REPLICA_PORT} IMCI=${REPLICA_AP}..."
+        ((HOST_ID++))
+        init_mysql_datadir ${REPLICA_HOST} ${REPLICA_HOME} 1
+
+        # set my.cnf
+        local MY_CNF=/tmp/my.cnf
+        cp ${BASE}/my_pdb_local_template.cnf ${MY_CNF}
+        sed -i -e "s#<LOCAL_HOME>#${REPLICA_HOME}#g" \
+               -e "s#<BASE_DIR>#${REPLICA_BASE}#g" \
+               -e "s#<DATA_DIR>#${RW_HOME}/data#g" \
+               -e "s#<BLOG>#${RW_HOME}/blog#g" \
+               -e "s#<PORT>#${REPLICA_PORT}#g" \
+               -e "s/#polar_master_host/polar_master_host = ${MASTER_HOST}/g" \
+               -e "s/#polar_master_port/polar_master_port = ${MASTER_PORT}/g" \
+               -e "s/#polar_master_user_name/polar_master_user_name = ${REPL_USER}/g" \
+               -e "s/#polar_master_user_password/polar_master_user_password = ${REPL_PASS}/g" \
+               -e "s/#polar_enable_replica/polar_enable_replica = ON/g" \
+               -e "s/^#MM_COMMON/loose/g" \
+               -e "s/^#MM_GR/loose/g" \
+               -e "s#<CC_DATADIR>#${MASTER_HOME}/data#g" \
+               -e "s/#loose_innodb_cc_glog_dir /loose_innodb_cc_glog_dir /g"\
+               -e "s#<GLOG_DIR>#${MASTER_HOME}/glog#g" \
+               ${MY_CNF}
+
+        if [[ ${REPLICA_AP} -eq 1 ]]; then
+            sed -i -e "s/#AP/loose/g" ${MY_CNF}
         fi
 
         get_mysql_params ${MY_CNF}
@@ -318,6 +407,7 @@ function deploy_replicas()
 
 function deploy_multi_master()
 {
+    CC_HOST=${MASTER_HOST}
     CC_PORT=${MASTER_PORT}
     CC_HOME=${MASTER_HOME}/cc_${CC_PORT}
     GLOG_PORT=`expr ${CC_PORT} + 19`
@@ -325,8 +415,8 @@ function deploy_multi_master()
     RW1_PORT=`expr ${CC_PORT} + 1`
     RW1_HOME=${MASTER_HOME}/rw_${RW1_PORT}
 
-    # Step 1 bootstrap a CC server
-    log_info "====================Step 1 bootstrap a CC server ..."
+    # bootstrap a CC server
+    log_info "==================== bootstrap a CC server ..."
     local pid=$(check_mysqld ${MYSQL_BASE}/bin ${MASTER_HOST} ${CC_PORT})
     [[ ${pid} -ne 0 ]] && fatal_error "Database server is already running at ${MASTER_HOST}:${CC_PORT} with pid=${pid}"
 
@@ -345,18 +435,13 @@ function deploy_multi_master()
            -e "s#<PORT>#${CC_PORT}#g" \
            -e "s#<CC_HOME>#${CC_HOME}#g" \
            -e "s#<MM_HOME>#${RW1_HOME}#g" \
-           -e "s/^#loose_polar_enable_imci_with_mm/loose_polar_enable_imci_with_mm/g" \
-           -e "s/^#loose_disable_sdi_file/loose_disable_sdi_file/g" \
-           -e "s/^#loose_mm_trans_dist/loose_mm_trans_dist/g" \
-           -e "s/^#loose_innodb_cc_notify_port/loose_innodb_cc_notify_port/g" \
-           -e "s/^#loose_mm_is_cc/loose_mm_is_cc/g" \
-           -e "s/^#loose_innodb_cc_port = <RDMA_PORT>/loose_innodb_cc_port = ${GLOG_PORT}/g" \
-           -e "s/^#loose_innodb_cc_glog_dir/loose_innodb_cc_glog_dir/g" \
-           -e "s/^#loose_innodb_cc_glog /loose_innodb_cc_glog /g" \
-           -e "s/^#loose_innodb_cc_master_log_dir/loose_innodb_cc_master_log_dir/g" \
-           -e "s/^#loose_innodb_cc_current_master_num/loose_innodb_cc_current_master_num = ${MASTER_COUNT}/g" \
-           -e "s/^#loose_innodb_global_ddl_lock_file_path/loose_innodb_global_ddl_lock_file_path/g" \
-           -e "s/^#loose_innodb_cc /loose_innodb_cc /g" \
+           -e "s/<CC_PORT>/${CC_PORT}/g" \
+           -e "s/^#MM_COMMON/loose/g" \
+           -e "s/<RDMA_PORT>/${GLOG_PORT}/g"  \
+           -e "s/^#MM_CC/loose/g" \
+           -e "s/<MASTER_COUNT>/${MASTER_COUNT}/g" \
+           -e "s/#loose_innodb_cc_glog_dir /loose_innodb_cc_glog_dir /g"\
+           -e "s#<GLOG_DIR>#${CC_HOME}/glog#g" \
            ${MY_CNF}
     get_mysql_params ${MY_CNF} ${MASTER_HOST}
 
@@ -371,8 +456,8 @@ function deploy_multi_master()
         FLUSH PRIVILEGES;
 EOF
 
-    # Step 2 bootstrap a RW server
-    log_info "====================Step 2 bootstrap master server ..."
+    # bootstrap a RW server
+    log_info "==================== bootstrap master server ..."
     MM_ID=1
     log_info "Deploy polardb master server for multi master at port=${RW1_PORT}"
     # init data home directory with local disk
@@ -387,20 +472,12 @@ EOF
            -e "s#<BLOG>#${RW1_HOME}/blog#g" \
            -e "s#<PORT>#${RW1_PORT}#g" \
            -e "s#<MM_HOME>#${RW1_HOME}#g" \
-           -e "s/^#loose_polar_enable_imci_with_mm/loose_polar_enable_imci_with_mm/g" \
-           -e "s/^#loose_disable_sdi_file/loose_disable_sdi_file/g" \
-           -e "s/^#loose_mm_trans_dist/loose_mm_trans_dist/g" \
-           -e "s/^#loose_mm_forward_file_meta_operation/loose_mm_forward_file_meta_operation/g" \
-           -e "s/^#loose_mm_is_master/loose_mm_is_master/g" \
-           -e "s/^#loose_mm_master_id = <MM_ID>/loose_mm_master_id = ${MM_ID}/g" \
-           -e "s/^#loose_innodb_mm_cc_host = <CC_HOST>/loose_innodb_mm_cc_host  = ${MASTER_HOST}/g" \
-           -e "s/^#loose_innodb_mm_cc_port = <RDMA_PORT>/loose_innodb_mm_cc_port = ${GLOG_PORT}/g" \
-           -e "s/^#loose_innodb_mm_cc_notify_port = <CC_PORT>/loose_innodb_mm_cc_notify_port = ${CC_PORT}/g" \
-           -e "s/^#loose_innodb_mm_master_id = <MM_ID>/loose_innodb_mm_master_id = ${MM_ID}/g" \
-           -e "s/^#loose_innodb_mm /loose_innodb_mm /g" \
-           -e "s/^#loose_innodb_global_ddl_lock_file_path/loose_innodb_global_ddl_lock_file_path/g" \
-           -e "s/^#loose_innodb_gtm_enabled/loose_innodb_gtm_enabled/g" \
-           -e "s/^#loose_innodb_reserve_extent_size/loose_innodb_reserve_extent_size/g" \
+           -e "s/<MM_ID>/${MM_ID}/g" \
+           -e "s/<CC_HOST>/${CC_HOST}/g" \
+           -e "s/^#MM_COMMON/loose/g" \
+           -e "s/<RDMA_PORT>/${GLOG_PORT}/g" \
+           -e "s/^#MM_RW/loose/g" \
+           -e "s/<CC_PORT>/${CC_PORT}/g" \
            ${MY_CNF}
     get_mysql_params ${MY_CNF} ${MASTER_HOST}
     bootstrap ${MYSQL_BASE}/bin ${MASTER_HOST} ${RW1_PORT} ${MY_CNF} || exit 1
@@ -434,20 +511,12 @@ EOF
              -e "s#<BLOG>#${RW1_HOME}/blog${MM_ID}#g" \
              -e "s#<PORT>#${RW_PORT}#g" \
              -e "s#<MM_HOME>#${RW1_HOME}#g" \
-             -e "s/^#loose_polar_enable_imci_with_mm/loose_polar_enable_imci_with_mm/g" \
-             -e "s/^#loose_disable_sdi_file/loose_disable_sdi_file/g" \
-             -e "s/^#loose_mm_trans_dist/loose_mm_trans_dist/g" \
-             -e "s/^#loose_mm_forward_file_meta_operation/loose_mm_forward_file_meta_operation/g" \
-             -e "s/^#loose_mm_is_master/loose_mm_is_master/g" \
-             -e "s/^#loose_mm_master_id = <MM_ID>/loose_mm_master_id = ${MM_ID}/g" \
-             -e "s/^#loose_innodb_mm_cc_host = <CC_HOST>/loose_innodb_mm_cc_host  = ${MASTER_HOST}/g" \
-             -e "s/^#loose_innodb_mm_cc_port = <RDMA_PORT>/loose_innodb_mm_cc_port = ${GLOG_PORT}/g" \
-             -e "s/^#loose_innodb_mm_cc_notify_port = <CC_PORT>/loose_innodb_mm_cc_notify_port = ${CC_PORT}/g" \
-             -e "s/^#loose_innodb_mm_master_id = <MM_ID>/loose_innodb_mm_master_id = ${MM_ID}/g" \
-             -e "s/^#loose_innodb_mm /loose_innodb_mm /g" \
-             -e "s/^#loose_innodb_global_ddl_lock_file_path/loose_innodb_global_ddl_lock_file_path/g" \
-             -e "s/^#loose_innodb_gtm_enabled/loose_innodb_gtm_enabled/g" \
-             -e "s/^#loose_innodb_reserve_extent_size/loose_innodb_reserve_extent_size/g" \
+             -e "s/<MM_ID>/${MM_ID}/g" \
+             -e "s/<CC_HOST>/${CC_HOST}/g" \
+             -e "s/^#MM_COMMON/loose/g" \
+             -e "s/<RDMA_PORT>/${GLOG_PORT}/g" \
+             -e "s/^#MM_RW/loose/g" \
+             -e "s/<CC_PORT>/${CC_PORT}/g" \
              ${MY_CNF}
       get_mysql_params ${MY_CNF} ${MASTER_HOST}
       /bin/rm -rf ${RW_HOME}/log ${RW_HOME}/tmp
@@ -457,92 +526,114 @@ EOF
     ${MYSQL_BASE}/bin/mysql -uroot -h127.0.0.1 -P${CC_PORT} -e "SELECT * FROM INFORMATION_SCHEMA.INNODB_CLUSTER_REGISTRY;"
     sleep 30
 
-    # Step 3 Add a global standby node
-    log_info "====================Step 3 Add a global standby node ..."
-    GS_PORT=`expr ${CC_PORT} + 20`
-    GS_HOME=${MASTER_HOME}/gs_${GS_PORT}
-    /bin/rm -rf ${GS_HOME}
-    mkdir -p ${GS_HOME} || fatal_error "failed to create data directory for global standby node"
+    if [[ ${GLOBAL_STANDBY} -eq 1 || ${GLOBAL_STANDBY_REPLIC} -eq 1 ]]; then
+      # Add a global standby node
+      log_info "==================== Add a global standby node ..."
+      GS_PORT=`expr ${CC_PORT} + 20`
+      GS_HOME=${MASTER_HOME}/gs_${GS_PORT}
+      /bin/rm -rf ${GS_HOME}
+      mkdir -p ${GS_HOME} || fatal_error "failed to create data directory for global standby node"
 
-    log_info "Deploy polardb global standby node at port=${GS_PORT} ..."
-    MM_ID=1
-    while [[ ${MM_ID} -le ${MASTER_COUNT} ]]; do
-      RW_PORT=`expr ${CC_PORT} + ${MM_ID}`
-      stop_mysqld ${MYSQL_BASE}/bin ${MASTER_HOST} ${RW_PORT}
-      ((MM_ID++))
-    done
-    stop_mysqld ${MYSQL_BASE}/bin ${MASTER_HOST} ${CC_PORT}
-    sleep 30
+      log_info "Deploy polardb global standby node at port=${GS_PORT} ..."
+      MM_ID=1
+      while [[ ${MM_ID} -le ${MASTER_COUNT} ]]; do
+        RW_PORT=`expr ${CC_PORT} + ${MM_ID}`
+        stop_mysqld ${MYSQL_BASE}/bin ${MASTER_HOST} ${RW_PORT}
+        ((MM_ID++))
+      done
+      stop_mysqld ${MYSQL_BASE}/bin ${MASTER_HOST} ${CC_PORT}
+      sleep 30
 
-    # copy data directory of standby from master
-    log_info "copy data directory of standby from master"
-    cp -r ${RW1_HOME}/* ${GS_HOME}/ || fatal_error "Failed to copy data from master data directory to standby data directory"
-    # Remove OLD redo logfiles and error log
-    log_info "remove OLD redo logfiles and error log"
-    /bin/rm -rf ${GS_HOME}/blog* ${GS_HOME}/log ${GS_HOME}/tmp ${GS_HOME}/data/ib_logfile* ${GS_HOME}/data/auto*.cnf
-    mkdir ${GS_HOME}/blog ${GS_HOME}/log ${GS_HOME}/tmp
+      # copy data directory of standby from master
+      log_info "copy data directory of standby from master"
+      cp -r ${RW1_HOME}/* ${GS_HOME}/ || fatal_error "Failed to copy data from master data directory to standby data directory"
+      # Remove OLD redo logfiles and error log
+      log_info "remove OLD redo logfiles and error log"
+      /bin/rm -rf ${GS_HOME}/blog* ${GS_HOME}/log ${GS_HOME}/tmp ${GS_HOME}/data/ib_logfile* ${GS_HOME}/data/auto*.cnf
+      mkdir ${GS_HOME}/blog ${GS_HOME}/log ${GS_HOME}/tmp
 
-    # set my.cnf
-    MY_CNF=${GS_HOME}/my.cnf
-    cp ${BASE}/my_pdb_local_template.cnf ${MY_CNF}
-    sed -i -e "s#<LOCAL_HOME>#${GS_HOME}#g" \
-           -e "s#<BASE_DIR>#${MYSQL_BASE}#g" \
-           -e "s#<DATA_DIR>#${GS_HOME}/data#g" \
-           -e "s#<BLOG>#${GS_HOME}/blog#g" \
-           -e "s#<PORT>#${GS_PORT}#g" \
-           -e "s/#polar_master_host/polar_master_host = ${MASTER_HOST}/g" \
-           -e "s/#polar_master_port/polar_master_port = ${CC_PORT}/g" \
-           -e "s/#polar_master_user_name/polar_master_user_name = ${REPL_USER}/g" \
-           -e "s/#polar_master_user_password/polar_master_user_password = ${REPL_PASS}/g" \
-           -e "s/^#loose_innodb_global_standby /loose_innodb_global_standby /g" \
-           -e "s/^#loose_innodb_standby_high_performance_parse/loose_innodb_standby_high_performance_parse/g" \
-           ${MY_CNF}
+      # set my.cnf
+      MY_CNF=${GS_HOME}/my.cnf
+      cp ${BASE}/my_pdb_local_template.cnf ${MY_CNF}
+      sed -i -e "s#<LOCAL_HOME>#${GS_HOME}#g" \
+             -e "s#<BASE_DIR>#${MYSQL_BASE}#g" \
+             -e "s#<DATA_DIR>#${GS_HOME}/data#g" \
+             -e "s#<BLOG>#${GS_HOME}/blog#g" \
+             -e "s#<PORT>#${GS_PORT}#g" \
+             -e "s/#polar_master_host/polar_master_host = ${CC_HOST}/g" \
+             -e "s/#polar_master_port/polar_master_port = ${CC_PORT}/g" \
+             -e "s/#polar_master_user_name/polar_master_user_name = ${REPL_USER}/g" \
+             -e "s/#polar_master_user_password/polar_master_user_password = ${REPL_PASS}/g" \
+             -e "s/^#MM_COMMON/loose/g" \
+             -e "s/^#MM_GS/loose/g" \
+             ${MY_CNF}
 
-    # start CC with special configuration
-    MY_CNF=${CC_HOME}/my.cnf
-    log_info "start CC with special configuration"
-    sed -i "s/^#loose_innodb_cc_glog_combine_all/loose_innodb_cc_glog_combine_all/g" ${MY_CNF}
-    start_mysqld ${MYSQL_BASE}/bin ${MASTER_HOST} ${CC_PORT} ${MY_CNF} || fatal_error "Can't start CC server"
-    ${MYSQL_BASE}/bin/mysql -uroot -h127.0.0.1 -P${CC_PORT} -e "ALTER SYSTEM WAIT GLOBAL LOGS UNTIL NOW();"
-    stop_mysqld ${MYSQL_BASE}/bin ${MASTER_HOST} ${CC_PORT}
-    sed -i "s/^loose_innodb_cc_glog_combine_all/#loose_innodb_cc_glog_combine_all/g" ${MY_CNF}
+      # start CC with special configuration
+      MY_CNF=${CC_HOME}/my.cnf
+      log_info "start CC with special configuration"
+      sed -i "s/^#loose_innodb_cc_glog_combine_all/loose_innodb_cc_glog_combine_all/g" ${MY_CNF}
+      start_mysqld ${MYSQL_BASE}/bin ${MASTER_HOST} ${CC_PORT} ${MY_CNF} || fatal_error "Can't start CC server"
+      ${MYSQL_BASE}/bin/mysql -uroot -h127.0.0.1 -P${CC_PORT} -e "ALTER SYSTEM WAIT GLOBAL LOGS UNTIL NOW();"
+      stop_mysqld ${MYSQL_BASE}/bin ${MASTER_HOST} ${CC_PORT}
+      sed -i "s/^loose_innodb_cc_glog_combine_all/#loose_innodb_cc_glog_combine_all/g" ${MY_CNF}
 
-    sleep 30
-    # COPY redo log files from CC's glog directory
-    log_info "COPY redo log files from CC's glog directory"
-    cp ${CC_HOME}/glog/ib_logfile* ${GS_HOME}/data/
+      sleep 30
+      # COPY redo log files from CC's glog directory
+      log_info "COPY redo log files from CC's glog directory"
+      cp ${CC_HOME}/glog/ib_logfile* ${GS_HOME}/data/
 
-    # Step 4 Start CC server, RW servers and global standby
-    log_info "====================Step 4 Start CC server and RW servers and global standby ..."
-    start_mysqld ${MYSQL_BASE}/bin ${MASTER_HOST} ${CC_PORT} ${CC_HOME}/my.cnf || fatal_error "Can't start CC server after configure global standby"
-    MM_ID=1
-    while [[ ${MM_ID} -le ${MASTER_COUNT} ]]; do
-      RW_PORT=`expr ${CC_PORT} + ${MM_ID}`
-      RW_HOME=${MASTER_HOME}/rw_${RW_PORT}
-      start_mysqld ${MYSQL_BASE}/bin ${MASTER_HOST} ${RW_PORT} ${RW_HOME}/my.cnf || fatal_error "Can't start master server for multi master cluster after configure global standby"
-      ((MM_ID++))
-    done
-    start_mysqld ${MYSQL_BASE}/bin ${MASTER_HOST} ${GS_PORT} ${GS_HOME}/my.cnf || fatal_error "Can't start global standby"
-    ${MYSQL_BASE}/bin/mysql -uroot -h127.0.0.1 -P${CC_PORT} -e "SELECT * FROM INFORMATION_SCHEMA.INNODB_CLUSTER_REGISTRY;"
-    ${MYSQL_BASE}/bin/mysql -uroot -h127.0.0.1 -P${CC_PORT} -e "SHOW POLAR GLOBAL STANDBYS;"
+      # Start CC server, RW servers and global standby
+      log_info "==================== Start CC server and RW servers and global standby ..."
+      start_mysqld ${MYSQL_BASE}/bin ${MASTER_HOST} ${CC_PORT} ${CC_HOME}/my.cnf || fatal_error "Can't start CC server after configure global standby"
+      MM_ID=1
+      while [[ ${MM_ID} -le ${MASTER_COUNT} ]]; do
+        RW_PORT=`expr ${CC_PORT} + ${MM_ID}`
+        RW_HOME=${MASTER_HOME}/rw_${RW_PORT}
+        start_mysqld ${MYSQL_BASE}/bin ${MASTER_HOST} ${RW_PORT} ${RW_HOME}/my.cnf || fatal_error "Can't start master server for multi master cluster after configure global standby"
+        ((MM_ID++))
+      done
+      start_mysqld ${MYSQL_BASE}/bin ${MASTER_HOST} ${GS_PORT} ${GS_HOME}/my.cnf || fatal_error "Can't start global standby"
+      ${MYSQL_BASE}/bin/mysql -uroot -h127.0.0.1 -P${CC_PORT} -e "SELECT * FROM INFORMATION_SCHEMA.INNODB_CLUSTER_REGISTRY;"
+      ${MYSQL_BASE}/bin/mysql -uroot -h127.0.0.1 -P${CC_PORT} -e "SHOW POLAR GLOBAL STANDBYS;"
 
-    # Step 5 Add 1 standard global replica and 1 global replica for AP
-    log_info "==================Step 5 Add 1 standard global replica and 1 global replica for AP ..."
-    log_info "Start a standard global replica and columnar global replica"
-    GR_PORT=`expr ${GS_PORT} + 1`
-    GR_HOME=${MASTER_HOME}/gr_${GR_PORT}
-    GA_PORT=`expr ${GS_PORT} + 2`
-    GA_HOME=${MASTER_HOME}/gr_${GA_PORT}
-    OLD_MASTER_HOME=${MASTER_HOME}
-    OLD_MASTER_PORT=${MASTER_PORT}
-    MASTER_HOME=${GS_HOME}
-    MASTER_PORT=${GS_PORT}
-    REPLICA_CONF_STR="${GR_PORT}:${GR_HOME}:0;${GA_PORT}:${GA_HOME}:1"
-    deploy_replicas 1 1
-    MASTER_HOME=${OLD_MASTER_HOME}
-    MASTER_PORT=${OLD_MASTER_PORT}
-    REPLICA_CONF_STR=""
-    ${MYSQL_BASE}/bin/mysql -uroot -h127.0.0.1 -P${GS_PORT} -e "SHOW POLAR REPLICAS;"
+      if [[ ${GLOBAL_STANDBY_REPLICA} -eq 1 ]]; then
+        # Add 1 standard global replica and 1 global replica for AP registered with global standby
+        log_info "================== Add 1 standard global replica and 1 global replica for AP registered with global standby ..."
+        log_info "Start a standard global standby replica and columnar global standby replica"
+        GSR_PORT=`expr ${GS_PORT} + 1`
+        GSR_HOME=${MASTER_HOME}/gsr_${GSR_PORT}
+        GSA_PORT=`expr ${GS_PORT} + 2`
+        GSA_HOME=${MASTER_HOME}/gsr_${GSA_PORT}
+        REPLICA_CONF_STR="${GSR_PORT}:${GSR_HOME}:0;${GSA_PORT}:${GSA_HOME}:1"
+        OLD_MASTER_HOME=${MASTER_HOME}
+        OLD_MASTER_PORT=${MASTER_PORT}
+        MASTER_HOME=${GS_HOME}
+        MASTER_PORT=${GS_PORT}
+        deploy_replicas 1 1
+        MASTER_HOME=${OLD_MASTER_HOME}
+        MASTER_PORT=${OLD_MASTER_PORT}
+        REPLICA_CONF_STR=""
+      fi
+    fi
+
+    if [[ ${GLOBAL_REPLICA} -eq 1 ]]; then
+      # Add 1 standard global replica and 1 global replica for AP registered with cache center
+      log_info "================== Add 1 standard global replica and 1 global replica for AP registered with CC ..."
+      log_info "Start a standard global replica and columnar global replica"
+      OLD_MASTER_HOME=${MASTER_HOME}
+      OLD_MASTER_PORT=${MASTER_PORT}
+      GR_PORT=`expr ${CC_PORT} + 11`
+      GR_HOME=${MASTER_HOME}/gr_${GR_PORT}
+      GA_PORT=`expr ${CC_PORT} + 12`
+      GA_HOME=${MASTER_HOME}/gr_${GA_PORT}
+      REPLICA_CONF_STR="${GR_PORT}:${GR_HOME}:0;${GA_PORT}:${GA_HOME}:1"
+      MASTER_HOME=${CC_HOME}
+      MASTER_PORT=${CC_PORT}
+      deploy_cc_replicas 1 ${RW1_HOME}
+      MASTER_HOME=${OLD_MASTER_HOME}
+      MASTER_PORT=${OLD_MASTER_PORT}
+      REPLICA_CONF_STR=""
+   fi
 }
 
 # main
